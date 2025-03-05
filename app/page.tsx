@@ -1,101 +1,185 @@
-import Image from "next/image";
+"use client"
 
-export default function Home() {
+import { useState } from "react"
+import { Button } from "./components/ui/button"
+import { Textarea } from "./components/ui/textarea"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs"
+import { Clipboard, Download } from "lucide-react"
+
+export default function NRCDataConverter() {
+  const [inputData, setInputData] = useState("")
+  const [outputData, setOutputData] = useState("")
+  const [copied, setCopied] = useState(false)
+
+  const convertToSQL = () => {
+    if (!inputData.trim()) {
+      setOutputData("Please enter some data to convert")
+      return
+    }
+
+    try {
+      const lines = inputData.split("\n").filter((line) => line.trim())
+
+      const dataLines = lines.slice(1)
+
+      const regionGroups: Record<string, { 
+        regionName: string; 
+        regionNameMM: string; 
+        code: string; 
+        townships: { township: string; townshipMM: string }[] 
+      }> = {};      
+
+      dataLines.forEach((line) => {        
+        const parts = line.split(/\t+|\s{2,}/)
+
+        if (parts.length >= 6) {
+          const regionName = parts[0].trim()
+          const regionNameMM = parts[1].trim()
+          const code = parts[2].trim()
+          const township = parts[3].trim()
+          const townshipMM = parts[5].trim()
+
+          if (!regionGroups[regionName]) {
+            regionGroups[regionName] = {
+              regionName,
+              regionNameMM,
+              code,
+              townships: [],
+            }
+          }
+
+          regionGroups[regionName].townships.push({
+            township,
+            townshipMM,
+          })
+        }
+      })
+
+      let sql = ""
+
+      Object.values(regionGroups).forEach((region) => {
+        const regionNameFormatted = region.regionName.replace(/\s+$$[^)]+$$/g, "")
+
+        sql += `-- ${region.regionName} State\n`
+        sql += `INSERT INTO \`fineract_default\`.\`m_code_value\` (code_id, code_value, code_description, code_value_mm)\n`
+        sql += `SELECT (SELECT id FROM m_code WHERE code_name = 'NRC_${regionNameFormatted.toUpperCase()}_TOWNSHIP'), township, CONCAT('Township of ${regionNameFormatted}'), township_myanmar\n`
+        sql += `FROM (SELECT '${region.townships[0].township}' AS township, '${region.townships[0].townshipMM}' AS township_myanmar\n`
+
+        for (let i = 1; i < region.townships.length; i++) {
+          sql += `UNION SELECT '${region.townships[i].township}', '${region.townships[i].townshipMM}'\n`
+        }
+
+        sql += `) AS townships;\n\n`
+      })
+
+      setOutputData(sql)
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        setOutputData(`Error converting data: ${error.message}`)
+      } else {
+        setOutputData("An unknown error occurred")
+      }
+    }
+  }
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(outputData)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const downloadSQL = () => {
+    const blob = new Blob([outputData], { type: "text/plain" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "nrc_townships.sql"
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+    <div className="container mx-auto py-10 max-w-5xl">
+      <Card>
+        <CardHeader>
+          <CardTitle>NRC Data Converter</CardTitle>
+          <CardDescription>Convert Excel-like NRC data to MySQL INSERT statements</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="convert" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="convert">Convert</TabsTrigger>
+              <TabsTrigger value="help">Help</TabsTrigger>
+            </TabsList>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+            <TabsContent value="convert" className="space-y-4">
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label htmlFor="input-data" className="block text-sm font-medium mb-2">
+                    Input Data (Excel-like format)
+                  </label>
+                  <Textarea
+                    id="input-data"
+                    placeholder="Paste your Excel data here..."
+                    className="min-h-[200px]"
+                    value={inputData}
+                    onChange={(e) => setInputData(e.target.value)}
+                  />
+                </div>
+
+                <Button onClick={convertToSQL} className="w-full">
+                  Convert to SQL
+                </Button>
+
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <label htmlFor="output-data" className="block text-sm font-medium">
+                      Output SQL
+                    </label>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={copyToClipboard} className="flex items-center gap-1">
+                        <Clipboard className="h-4 w-4" />
+                        {copied ? "Copied!" : "Copy"}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={downloadSQL} className="flex items-center gap-1">
+                        <Download className="h-4 w-4" />
+                        Download
+                      </Button>
+                    </div>
+                  </div>
+                  <Textarea id="output-data" className="min-h-[300px] font-mono text-sm" value={outputData} readOnly />
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="help">
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">How to use this converter</h3>
+                <ol className="list-decimal pl-5 space-y-2">
+                  <li>Copy your Excel data including the header row</li>
+                  <li>Paste it into the input field</li>
+                  <li>Click &quot;Convert to SQL&quot;</li>
+                  <li>The output will be formatted as MySQL INSERT statements</li>
+                  <li>You can copy the output or download it as a SQL file</li>
+                </ol>
+
+                <h3 className="text-lg font-medium mt-6">Expected Input Format</h3>
+                <p>The input should have the following columns:</p>
+                <pre className="bg-muted p-2 rounded text-sm overflow-x-auto">
+                  RegionName Eng RegionName MM Code NRC Pattern Eng Code NRC Pattern MM
+                </pre>
+
+                <h3 className="text-lg font-medium mt-6">Output Format</h3>
+                <p>The output will be MySQL INSERT statements grouped by region.</p>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
     </div>
-  );
+  )
 }
+
